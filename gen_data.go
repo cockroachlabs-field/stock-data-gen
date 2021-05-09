@@ -13,8 +13,10 @@ GOOG,2009-06-30,False,Q2,2009,10-Q,5522897000.0,1873894000.0,1484545000.0,4.7,4.
 import (
 	"context"
 	"fmt"
+	"github.com/cockroachdb/cockroach-go/v2/crdb/crdbpgx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v4"
+	"log"
 	"math/rand"
 	"os"
 	"strconv"
@@ -95,8 +97,8 @@ var wg sync.WaitGroup // Global
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(
-      os.Stderr,
-      `
+			os.Stderr,
+			`
       Usage: %s --dump-ddl | N_ROWS
 
       Environment variables:
@@ -140,10 +142,9 @@ func main() {
 	wg.Wait()
 }
 
-func copyRows(conn *pgx.Conn, rows [][]interface{}, n int) {
+func copyRows(ctx context.Context, tx pgx.Tx, rows [][]interface{}, n int) error {
 	// https://pkg.go.dev/github.com/jackc/pgx#hdr-Copy_Protocol
-	//copyCount, err := conn.CopyFrom(
-	_, err := conn.CopyFrom(
+	_, err := tx.CopyFrom(
 		context.Background(),
 		pgx.Identifier{"fund_activity"},
 		[]string{"id", "ticker", "end_date", "amend", "period_focus", "fiscal_year", "doc_type", "revenues", "op_income", "net_income", "eps_basic", "eps_diluted", "dividend", "assets", "cur_assets", "cur_liab", "cash", "equity", "cash_flow_op", "cash_flow_inv", "cash_flow_fin"},
@@ -152,6 +153,7 @@ func copyRows(conn *pgx.Conn, rows [][]interface{}, n int) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading rows: %v\n", err)
 	}
+	return err
 	//fmt.Println("Copy count:", copyCount)
 }
 
@@ -170,7 +172,12 @@ func doInserts(nRows, batchSize int) {
 	nRowsInBatch := 0
 	for i := 0; i < nRows; i++ {
 		if i > 0 && i%batchSize == 0 {
-			copyRows(conn, rows, nRowsInBatch)
+			err := crdbpgx.ExecuteTx(context.Background(), conn, pgx.TxOptions{}, func(tx pgx.Tx) error {
+				return copyRows(context.Background(), tx, rows, nRowsInBatch)
+			})
+			if err != nil {
+				log.Fatal("error: ", err)
+			}
 			nRowsInBatch = 0
 		}
 		t := randDate()
@@ -183,7 +190,12 @@ func doInserts(nRows, batchSize int) {
 		nRowsInBatch += 1
 	}
 	if nRowsInBatch > 0 {
-		copyRows(conn, rows, nRowsInBatch)
+		err := crdbpgx.ExecuteTx(context.Background(), conn, pgx.TxOptions{}, func(tx pgx.Tx) error {
+			return copyRows(context.Background(), tx, rows, nRowsInBatch)
+		})
+		if err != nil {
+			log.Fatal("error: ", err)
+		}
 		nRowsInBatch = 0
 	}
 }
