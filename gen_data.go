@@ -99,23 +99,29 @@ func main() {
 		fmt.Fprintf(
 			os.Stderr,
 			`
-      Usage: %s --dump-ddl | N_ROWS
+      Usage: %s --ddl | N_ROWS
+
+        --ddl - prints the table's DDL to be dumped to STDOUT, then exits
+        N_ROWS - (type: INT) the total number of rows to generate and load into the table
 
       Environment variables:
       
-        BATCH_SIZE - the number of rows copied at a time.  Default: 128
-        N_THREADS - the number of goroutines run concurrently.  Default: 4
+        BATCH_SIZE - the number of rows copied at a time  (Default: 128)
+        N_THREADS - the number of goroutines run concurrently (Default: 4)
 
 
 `, os.Args[0])
 		os.Exit(1)
 	}
-	if "--dump-ddl" == os.Args[1] {
+	if "--ddl" == os.Args[1] {
 		fmt.Println(ddl)
 		os.Exit(0)
 	}
 
 	nRows, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	batchSize := 128
 	if bs := os.Getenv("BATCH_SIZE"); bs != "" {
